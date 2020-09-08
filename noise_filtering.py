@@ -111,3 +111,83 @@ class STFilter(NoiseFilter):
             return Trajectory(traj.oid, self.get_tid(traj.oid, clean_pt_list), clean_pt_list)
         else:
             return None
+        
+        
+class HeuristicMeanFilter(NoiseFilter):
+    """
+    Find outlier by speed (if the current speed is out of max speed)
+    Replace outlier with mean
+    Mean filter usually handles individual noise points with a dense representation.
+    """
+
+    def __init__(self, max_speed, win_size=1):
+        """
+        Args:
+        ----
+        max_speed:
+            int. m/s. threshold of noise speed
+        win_size:
+            int. prefer odd number. window size of calculating mean value to replace noise.
+        """
+        super(NoiseFilter, self).__init__()
+
+        self.max_speed = max_speed
+        self.win_size = win_size
+
+    def filter(self, traj):
+        """
+        When previous speed and next speed both are larger than max speed, then considering it as outlier.
+        Replace outlier with mean value. The range is defined by window size.
+        consider about the boundary.
+        make sure noise value is in the middle.
+
+        Args:
+        -----
+        traj:
+            Trajectory(). a single trajectory
+        Returns:
+        --------
+        new_traj:
+            Trajectory(). replace noise with mean or median
+        """
+        pt_list = traj.pt_list.copy()
+        if len(pt_list) <= 1:
+            return None
+        for i in range(1, len(pt_list) - 1):
+            time_span_pre = (pt_list[i].time - pt_list[i - 1].time).total_seconds()
+            dist_pre = distance(pt_list[i - 1], pt_list[i])
+            time_span_next = (pt_list[i + 1].time - pt_list[i].time).total_seconds()
+            dist_next = distance(pt_list[i], pt_list[i + 1])
+            # compute current speed
+            speed_pre = dist_pre / time_span_pre
+            speed_next = dist_next / time_span_next
+            # if the first point is noise
+            if i == 1 and speed_pre > self.max_speed > speed_next:
+                lat = pt_list[i].lat * 2 - pt_list[i + 1].lat
+                lng = pt_list[i].lng * 2 - pt_list[i + 1].lng
+                pt_list[0] = STPoint(lat, lng, pt_list[0].time)
+            # if the last point is noise
+            elif i == len(pt_list) - 2 and speed_next > self.max_speed >= speed_pre:
+                lat = pt_list[i - 1].lat * 2 - pt_list[i - 2].lat
+                lng = pt_list[i - 1].lng * 2 - pt_list[i - 2].lng
+                pt_list[i + 1] = STPoint(lat, lng, pt_list[i].time)
+            # if the middle point is noise
+            elif speed_pre > self.max_speed and speed_next > self.max_speed:
+                pt_list[i] = STPoint(0, 0, pt_list[i].time)
+                lats, lngs = [], []
+                # fix index bug. make sure index_i is in the middle.
+                wind_size = self.win_size
+                if self.win_size > i:
+                    wind_size = i
+                elif self.win_size > len(pt_list) - 1 - i:
+                    wind_size = len(pt_list) - 1 - i
+                for pt in pt_list[i-wind_size:i+wind_size+1]:
+                    lats.append(pt.lat)
+                    lngs.append(pt.lng)
+
+                lat = sum(lats) / (len(lats) - 1)
+                lng = sum(lngs) / (len(lngs) - 1)
+                pt_list[i] = STPoint(lat, lng, pt_list[i].time)
+
+        return Trajectory(traj.oid, self.get_tid(traj.oid, pt_list), pt_list)
+
