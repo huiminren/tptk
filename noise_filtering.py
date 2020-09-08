@@ -1,6 +1,6 @@
 from .common.spatial_func import distance
 from .common.trajectory import Trajectory
-
+from statistics import median
 
 class NoiseFilter:
     def filter(self, traj):
@@ -10,7 +10,42 @@ class NoiseFilter:
         return oid + '_' + clean_pt_list[0].time.strftime('%Y%m%d%H%M') + '_' + \
                clean_pt_list[-1].time.strftime('%Y%m%d%H%M')
 
+    
+class MedianFilter(NoiseFilter):
+    """
+    Smooth each point with median value, since mean filter is sensitive to outliers.
+    x_i = median(z_{i-n+1}, z_{i-n+2}, ..., z_{i-1}, z_{i}) eq.1.4
+    i: ith point
+    z: original points
+    n: window size
+    """
 
+    def __init__(self, win_size=3):
+        super(MedianFilter, self).__init__()
+        self.win_size = win_size // 2  # put the target value in middle
+
+    def filter(self, traj):
+        pt_list = traj.pt_list.copy()
+        if len(pt_list) <= 1:
+            return None
+
+        for i in range(1, len(pt_list)-1):
+            # post-preprocessing. make sure index_i is in the middle.
+            wind_size = self.win_size
+            lats, lngs = [], []
+            if self.win_size > i:
+                wind_size = i
+            elif self.win_size > len(pt_list) - 1 - i:
+                wind_size = len(pt_list) - 1 - i
+            # get smoothed location
+            for pt in pt_list[i-wind_size:i+wind_size+1]:
+                lats.append(pt.lat)
+                lngs.append(pt.lng)
+            pt_list[i] = STPoint(median(lats), median(lngs), pt_list[i].time)
+
+        return Trajectory(traj.oid, self.get_tid(traj.oid, pt_list), pt_list)
+
+    
 class HeuristicFilter(NoiseFilter):
     """
     Remove outlier if it is out of the max speed
@@ -28,9 +63,9 @@ class HeuristicFilter(NoiseFilter):
         remove_inds = []
         for i in range(1, len(pt_list) - 1):
             time_span_pre = (pt_list[i].time - pt_list[i - 1].time).total_seconds()
-            dist_pre = haversine_distance(pt_list[i - 1], pt_list[i])
+            dist_pre = distance(pt_list[i - 1], pt_list[i])
             time_span_next = (pt_list[i + 1].time - pt_list[i].time).total_seconds()
-            dist_next = haversine_distance(pt_list[i], pt_list[i + 1])
+            dist_next = distance(pt_list[i], pt_list[i + 1])
             speed_pre = dist_pre / time_span_pre
             speed_next = dist_next / time_span_next
             # the first point is outlier
@@ -52,7 +87,7 @@ class HeuristicFilter(NoiseFilter):
             clean_pt_list.append(pt_list[j])
 
         if len(clean_pt_list) > 1:
-            return Trajectory(traj.oid, traj.did, self.get_tid(traj.oid, clean_pt_list), clean_pt_list)
+            return Trajectory(traj.oid, self.get_tid(traj.oid, clean_pt_list), clean_pt_list)
         else:
             return None
 
