@@ -42,9 +42,11 @@ class MedianFilter(NoiseFilter):
                 lats.append(pt.lat)
                 lngs.append(pt.lng)
             pt_list[i] = STPoint(median(lats), median(lngs), pt_list[i].time)
-
-        return Trajectory(traj.oid, self.get_tid(traj.oid, pt_list), pt_list)
-
+        
+        if len(pt_list) > 1:
+            return Trajectory(traj.oid, self.get_tid(traj.oid, pt_list), pt_list)
+        else:
+            return None
     
 class HeuristicFilter(NoiseFilter):
     """
@@ -189,5 +191,7 @@ class HeuristicMeanFilter(NoiseFilter):
                 lng = sum(lngs) / (len(lngs) - 1)
                 pt_list[i] = STPoint(lat, lng, pt_list[i].time)
 
-        return Trajectory(traj.oid, self.get_tid(traj.oid, pt_list), pt_list)
-
+        if len(pt_list) > 1:
+            return Trajectory(traj.oid, self.get_tid(traj.oid, pt_list), pt_list)
+        else:
+            return None
